@@ -1,20 +1,31 @@
-# .github/workflows/update-readme.yml
-name: Update profile README
+name: Update README
 on:
   schedule:
-    - cron: "15 5 * * *"   # once daily at 05:15 UTC
-  workflow_dispatch:        # allow manual runs
+    - cron: "15 5 * * *"   # 05:15 UTC (~12:15 AM America/Chicago during DST)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
       - name: Generate README content
         run: python scripts/update_readme.py
-      - name: Commit changes
+
+      - name: Commit & push if changed
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git pull --rebase
           git add README.md
-          git commit -m "chore: refresh profile README" || echo "no changes"
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: refresh README"
           git push
