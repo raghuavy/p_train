@@ -1,0 +1,41 @@
+name: Docs/Stats PR
+on:
+  schedule:
+    - cron: "30 5 * * *"     # daily 05:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  docs-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Generate docs/stats
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          from pathlib import Path
+          Path("reports").mkdir(exist_ok=True)
+          now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+          Path("reports/stats.md").write_text(f"# Daily Stats\n\nLast updated: {now}\n", encoding="utf-8")
+          PY
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GH_ME_TOKEN }}
+          branch: "auto/docs-${{ github.run_id }}"
+          commit-message: "docs: refresh stats"
+          title: "Docs: refresh stats"
+          body: "Automated update to reports/stats.md (daily)."
+          labels: docs, automated
+          author: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+          committer: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
