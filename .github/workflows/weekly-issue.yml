@@ -1,12 +1,16 @@
 name: Weekly progress issue
 on:
   schedule:
-    - cron: "0 15 * * MON"
+    - cron: "0 15 * * MON"   # Mondays 15:00 UTC
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+
+concurrency:
+  group: weekly-issue-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   weekly-issue:
@@ -17,10 +21,34 @@ jobs:
       - id: date
         run: echo "today=$(date -u +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
+      # Ensure labels exist (use bot token; no contribution impact)
+      - name: Ensure 'weekly' label
+        uses: peter-evans/create-or-update-label@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: weekly
+          color: 1d76db
+
+      - name: Ensure 'tracking' label
+        uses: peter-evans/create-or-update-label@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: tracking
+          color: 7057ff
+
+      # Create the issue as YOU (uses your PAT)
       - name: Create weekly issue
+        id: create
         uses: peter-evans/create-issue-from-file@v5
         with:
-          token: ${{ secrets.GH_ME_TOKEN }}
+          token: ${{ secrets.GH_ME_TOKEN }}     # your fine-grained PAT
           title: "Weekly progress – ${{ steps.date.outputs.today }}"
           content-filepath: .github/ISSUE_TEMPLATE/weekly.md
-          labels: weekly, tracking
+
+      # Add labels with bot token (PAT sometimes can't)
+      - name: Add labels to the new issue
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ steps.create.outputs.issue-number }}
+          labels: weekly,tracking
