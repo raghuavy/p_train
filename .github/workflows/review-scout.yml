@@ -1,0 +1,33 @@
+name: Review scout
+on:
+  schedule: [{ cron: "0 16 * * MON" }]
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build review queue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          q1='is:open is:pr -author:@me -reviewed-by:@me -is:draft language:python sort:updated-desc'
+          q2='is:open is:pr -author:@me -reviewed-by:@me -is:draft language:c,language:c++ sort:updated-desc'
+          list() { gh search prs "$1" --limit 5 \
+            --json repository,number,title,url,author \
+            --jq '.[]|"- ["+.repository.nameWithOwner+" #"+(.number|tostring)+" — "+.title+" ("+.author.login+")]("+.url+")"'; }
+          BODY=$(
+            echo "### PRs to consider reviewing"; echo
+            list "$q1"; echo; list "$q2"
+          )
+          # create or update a pinned "Review queue" issue
+          ex=$(gh issue list --search "in:title Review queue" --state open --json number --jq '.[0].number' || true)
+          if [ -n "$ex" ]; then
+            gh issue edit "$ex" --add-label "tracking" --title "Review queue" --body "$BODY"
+          else
+            gh issue create --title "Review queue" --label "tracking" --body "$BODY"
+          fi
