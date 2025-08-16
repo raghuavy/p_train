@@ -1,7 +1,7 @@
 name: Weekly progress issue
 on:
   schedule:
-    - cron: "0 15 * * MON"   # Mondays 15:00 UTC
+    - cron: "0 15 * * MON"
   workflow_dispatch:
 
 permissions:
@@ -15,8 +15,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - id: date
-        run: |
-          echo "today=$(date -u +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        run: echo "today=$(date -u +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
       - name: Create weekly issue
         uses: peter-evans/create-issue-from-file@v5
