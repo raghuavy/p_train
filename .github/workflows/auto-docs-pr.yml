@@ -1,7 +1,8 @@
+# .github/workflows/auto-docs-pr.yml
 name: Docs/Stats PR
 on:
   schedule:
-    - cron: "30 5 * * *"     # daily 05:30 UTC
+    - cron: "30 5 * * *"
   workflow_dispatch:
 
 permissions:
@@ -12,10 +13,17 @@ jobs:
   docs-pr:
     runs-on: ubuntu-latest
     steps:
-      # Important: don't persist the default GITHUB_TOKEN creds
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Authenticate git with PAT
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GH_ME_TOKEN }}@github.com/${{ github.repository }}.git
+          # quick sanity check (will 403 if PAT lacks access)
+          git ls-remote --heads origin
 
       - uses: actions/setup-python@v5
         with:
@@ -34,8 +42,8 @@ jobs:
       - name: Create PR
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GH_ME_TOKEN }}   # your PAT (with Contents+PR write)
-          branch: auto/docs                   # reuse same branch; action will update PR
+          token: ${{ secrets.GH_ME_TOKEN }}
+          branch: auto/docs
           commit-message: "docs: refresh stats"
           title: "Docs: refresh stats"
           body: "Automated update to reports/stats.md (daily)."
