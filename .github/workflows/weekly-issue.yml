@@ -21,38 +21,32 @@ jobs:
       - id: date
         run: echo "today=$(date -u +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
-      # Ensure labels exist (via GitHub CLI + GITHUB_TOKEN)
+      # Make sure labels exist (uses repo token)
       - name: Ensure labels
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          ensure_label () {
-            local name="$1" color="$2" desc="$3"
-            if gh api "repos/${{ github.repository }}/labels/${name}" >/dev/null 2>&1; then
-              gh api --method PATCH "repos/${{ github.repository }}/labels/${name}" \
-                -f color="$color" -f description="$desc" >/dev/null
-            else
-              gh api --method POST "repos/${{ github.repository }}/labels" \
-                -f name="$name" -f color="$color" -f description="$desc" >/dev/null
-            fi
-          }
-          ensure_label "weekly" "1d76db" "Weekly progress"
-          ensure_label "tracking" "7057ff" "Tracking issue"
+          gh api -X GET repos/${{ github.repository }}/labels/weekly >/dev/null 2>&1 || \
+            gh api -X POST repos/${{ github.repository }}/labels -f name='weekly' -f color='1d76db' -f description='Weekly progress'
+          gh api -X GET repos/${{ github.repository }}/labels/tracking >/dev/null 2>&1 || \
+            gh api -X POST repos/${{ github.repository }}/labels -f name='tracking' -f color='7057ff' -f description='Tracking issue'
 
-      # Create the issue AS YOU (uses your PAT)
+      # Create the issue AS YOU (PAT)
       - name: Create weekly issue
         id: create
         uses: peter-evans/create-issue-from-file@v5
         with:
-          token: ${{ secrets.GH_ME_TOKEN }}     # your fine-grained/classic PAT
+          token: ${{ secrets.GH_ME_TOKEN }}
           title: "Weekly progress – ${{ steps.date.outputs.today }}"
           content-filepath: .github/ISSUE_TEMPLATE/weekly.md
 
-      # Add labels with repo token (safe)
+      # Add labels (newline-separated)
       - name: Add labels
         uses: actions-ecosystem/action-add-labels@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           number: ${{ steps.create.outputs.issue-number }}
-          labels: weekly,tracking
+          labels: |
+            weekly
+            tracking
