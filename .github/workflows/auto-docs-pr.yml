@@ -1,7 +1,7 @@
 name: Docs/Stats PR
 on:
   schedule:
-    - cron: "30 5 * * *"
+    - cron: "30 5 * * *"     # daily 05:30 UTC
   workflow_dispatch:
 
 permissions:
@@ -19,8 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: false  # we'll auth with your PAT
 
+      # Use YOUR PAT so commits/PRs are authored by you
       - name: Configure git with PAT
         env:
           PAT: ${{ secrets.GH_ME_TOKEN }}
@@ -30,16 +31,15 @@ jobs:
           git config user.email "${{ github.actor }}@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${PAT}@github.com/${{ github.repository }}.git
 
-      # ✅ Prepare branch BEFORE generating files
+      # Prepare working branch BEFORE generating files
       - name: Prepare auto/docs branch
         run: |
           set -e
-          git fetch origin
+          git fetch origin --prune
           if git ls-remote --exit-code --heads origin auto/docs >/dev/null 2>&1; then
             git checkout -B auto/docs origin/auto/docs
           else
-            # base new branch on latest main
-            git checkout -B auto/docs
+            git checkout -B auto/docs origin/main
           fi
 
       - uses: actions/setup-python@v5
@@ -69,10 +69,11 @@ jobs:
             exit 0
           fi
           git commit -m "docs: refresh stats"
-          # handle remote updates safely
+          # push safely even if remote branch was updated elsewhere
           git push --force-with-lease origin HEAD:refs/heads/auto/docs
           echo "changed=true" >> $GITHUB_OUTPUT
 
+      # Ensure label exists (use repo token)
       - name: Ensure 'docs' label
         if: steps.push.outputs.changed == 'true'
         env:
@@ -83,18 +84,27 @@ jobs:
               -f name='docs' -f color='0e8a16' -f description='Documentation updates'
           fi
 
+      # Create or update PR (robust; only when there were changes)
       - name: Create or update PR
         if: steps.push.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GH_ME_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_ME_TOKEN }}   # PAT for authoring the PR as you
         run: |
-          if gh pr view --head auto/docs >/dev/null 2>&1; then
-            echo "PR already exists; updated branch."
-          else
+          set -e
+          PR=$(gh pr list --head auto/docs --base main --state open --json number --jq '.[0].number')
+
+          if [ -z "$PR" ]; then
             gh pr create \
               --base main \
               --head auto/docs \
               --title "Docs: refresh stats" \
-              --body "Automated update to reports/stats.md (daily)." \
-              --label docs
+              --body "Automated update to reports/stats.md (daily)."
+            PR=$(gh pr list --head auto/docs --base main --state open --json number --jq '.[0].number')
+          else
+            echo "PR #$PR already exists; branch updated."
           fi
+
+          # Add the 'docs' label using the repo token
+          GH_TOKEN="${{ secrets.GITHUB_TOKEN }}" gh api \
+            -X POST "repos/${{ github.repository }}/issues/${PR}/labels" \
+            -f labels='["docs"]' >/devnull 2>&1 || true
