@@ -1,4 +1,3 @@
-# .github/workflows/auto-docs-pr.yml
 name: Docs/Stats PR
 on:
   schedule:
@@ -17,13 +16,32 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Authenticate git with PAT
+      # Use YOUR PAT for all API/git ops
+      - name: Configure git remote with PAT
+        env:
+          PAT: ${{ secrets.GH_ME_TOKEN }}
         run: |
+          set -e
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GH_ME_TOKEN }}@github.com/${{ github.repository }}.git
-          # quick sanity check (will 403 if PAT lacks access)
-          git ls-remote --heads origin
+          git remote set-url origin https://x-access-token:${PAT}@github.com/${{ github.repository }}.git
+          # verify token owner & repo access (fails early if wrong)
+          echo "Token user:"
+          curl -fsSL -H "Authorization: token ${PAT}" https://api.github.com/user | jq -r .login || true
+          echo "Repo permissions:"
+          curl -fsSL -H "Authorization: token ${PAT}" https://api.github.com/repos/${{ github.repository }} | jq -r '.permissions' || true
+          # quick push test to a throwaway branch
+          git checkout -b _auth_test_${{ github.run_id }}
+          echo "ok" > .auth_test
+          git add .auth_test && git commit -m "auth test"
+          if ! git push -u origin HEAD; then
+            echo "::error::PAT cannot push to ${{ github.repository }}. Ensure Contents:write and repo access."
+            exit 1
+          fi
+          # cleanup remote test branch (ignore failure)
+          curl -fsSL -X DELETE -H "Authorization: token ${PAT}" \
+            https://api.github.com/repos/${{ github.repository }}/git/refs/heads/_auth_test_${{ github.run_id }} || true
+          git checkout - && git branch -D _auth_test_${{ github.run_id }} || true
 
       - uses: actions/setup-python@v5
         with:
@@ -39,14 +57,31 @@ jobs:
           Path("reports/stats.md").write_text(f"# Daily Stats\n\nLast updated: {now}\n", encoding="utf-8")
           PY
 
-      - name: Create PR
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GH_ME_TOKEN }}
-          branch: auto/docs
-          commit-message: "docs: refresh stats"
-          title: "Docs: refresh stats"
-          body: "Automated update to reports/stats.md (daily)."
-          labels: docs
-          author: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
-          committer: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+      # Commit and push as YOU using the PAT
+      - name: Commit & push branch
+        env:
+          PAT: ${{ secrets.GH_ME_TOKEN }}
+        run: |
+          set -e
+          git checkout -B auto/docs
+          git add reports/stats.md
+          git diff --cached --quiet && { echo "No changes"; exit 0; }
+          git commit -m "docs: refresh stats"
+          git push -u origin auto/docs
+
+      # Open or update the PR (authored by YOU)
+      - name: Create or update PR
+        env:
+          GH_TOKEN: ${{ secrets.GH_ME_TOKEN }}
+        run: |
+          # if PR from auto/docs exists, just update; else create
+          if gh pr view --head auto/docs >/dev/null 2>&1; then
+            echo "PR already exists; updated branch."
+          else
+            gh pr create \
+              --base main \
+              --head auto/docs \
+              --title "Docs: refresh stats" \
+              --body "Automated update to reports/stats.md (daily)." \
+              --label docs
+          fi
