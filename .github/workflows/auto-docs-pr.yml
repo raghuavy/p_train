@@ -12,7 +12,10 @@ jobs:
   docs-pr:
     runs-on: ubuntu-latest
     steps:
+      # Important: don't persist the default GITHUB_TOKEN creds
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -31,11 +34,11 @@ jobs:
       - name: Create PR
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GH_ME_TOKEN }}
-          branch: "auto/docs-${{ github.run_id }}"
+          token: ${{ secrets.GH_ME_TOKEN }}   # your PAT (with Contents+PR write)
+          branch: auto/docs                   # reuse same branch; action will update PR
           commit-message: "docs: refresh stats"
           title: "Docs: refresh stats"
           body: "Automated update to reports/stats.md (daily)."
-          labels: docs, automated
+          labels: docs
           author: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
           committer: "${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
