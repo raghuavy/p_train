@@ -7,7 +7,11 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  issues: write   # needed to create labels
+  issues: write
+
+concurrency:
+  group: auto-docs-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   docs-pr:
@@ -17,12 +21,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # Use your PAT for git so commits/PRs are authored by you
+      # Use your PAT so commits/PRs are authored by you
       - name: Configure git with PAT
         env:
           PAT: ${{ secrets.GH_ME_TOKEN }}
         run: |
-          set -e
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${PAT}@github.com/${{ github.repository }}.git
@@ -47,18 +50,27 @@ jobs:
           PAT: ${{ secrets.GH_ME_TOKEN }}
         run: |
           set -e
-          git checkout -B auto/docs
+          # fetch and base our local branch on the remote if it exists
+          git fetch origin
+          if git ls-remote --exit-code --heads origin auto/docs >/dev/null 2>&1; then
+            git checkout -B auto/docs origin/auto/docs
+          else
+            git checkout -B auto/docs
+          fi
+
           git add reports/stats.md
           if git diff --cached --quiet; then
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "No changes"
             exit 0
           fi
+
           git commit -m "docs: refresh stats"
-          git push -u origin auto/docs
+          # push safely even if histories diverge
+          git push --force-with-lease origin HEAD:refs/heads/auto/docs
           echo "changed=true" >> $GITHUB_OUTPUT
 
-      # Ensure the 'docs' label exists (use repo token)
+      # Ensure the 'docs' label exists
       - name: Ensure 'docs' label
         if: steps.push.outputs.changed == 'true'
         env:
