@@ -7,6 +7,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write   # needed to create labels
 
 jobs:
   docs-pr:
@@ -16,8 +17,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # Use YOUR PAT for all API/git ops
-      - name: Configure git remote with PAT
+      # Use your PAT for git so commits/PRs are authored by you
+      - name: Configure git with PAT
         env:
           PAT: ${{ secrets.GH_ME_TOKEN }}
         run: |
@@ -25,23 +26,6 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${PAT}@github.com/${{ github.repository }}.git
-          # verify token owner & repo access (fails early if wrong)
-          echo "Token user:"
-          curl -fsSL -H "Authorization: token ${PAT}" https://api.github.com/user | jq -r .login || true
-          echo "Repo permissions:"
-          curl -fsSL -H "Authorization: token ${PAT}" https://api.github.com/repos/${{ github.repository }} | jq -r '.permissions' || true
-          # quick push test to a throwaway branch
-          git checkout -b _auth_test_${{ github.run_id }}
-          echo "ok" > .auth_test
-          git add .auth_test && git commit -m "auth test"
-          if ! git push -u origin HEAD; then
-            echo "::error::PAT cannot push to ${{ github.repository }}. Ensure Contents:write and repo access."
-            exit 1
-          fi
-          # cleanup remote test branch (ignore failure)
-          curl -fsSL -X DELETE -H "Authorization: token ${PAT}" \
-            https://api.github.com/repos/${{ github.repository }}/git/refs/heads/_auth_test_${{ github.run_id }} || true
-          git checkout - && git branch -D _auth_test_${{ github.run_id }} || true
 
       - uses: actions/setup-python@v5
         with:
@@ -57,24 +41,40 @@ jobs:
           Path("reports/stats.md").write_text(f"# Daily Stats\n\nLast updated: {now}\n", encoding="utf-8")
           PY
 
-      # Commit and push as YOU using the PAT
       - name: Commit & push branch
+        id: push
         env:
           PAT: ${{ secrets.GH_ME_TOKEN }}
         run: |
           set -e
           git checkout -B auto/docs
           git add reports/stats.md
-          git diff --cached --quiet && { echo "No changes"; exit 0; }
+          if git diff --cached --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes"
+            exit 0
+          fi
           git commit -m "docs: refresh stats"
           git push -u origin auto/docs
+          echo "changed=true" >> $GITHUB_OUTPUT
 
-      # Open or update the PR (authored by YOU)
+      # Ensure the 'docs' label exists (use repo token)
+      - name: Ensure 'docs' label
+        if: steps.push.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh api -X GET repos/${{ github.repository }}/labels/docs >/dev/null 2>&1; then
+            gh api -X POST repos/${{ github.repository }}/labels \
+              -f name='docs' -f color='0e8a16' -f description='Documentation updates'
+          fi
+
+      # Open or update the PR (authored by you via PAT)
       - name: Create or update PR
+        if: steps.push.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_ME_TOKEN }}
         run: |
-          # if PR from auto/docs exists, just update; else create
           if gh pr view --head auto/docs >/dev/null 2>&1; then
             echo "PR already exists; updated branch."
           else
