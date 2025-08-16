@@ -21,14 +21,26 @@ jobs:
         with:
           persist-credentials: false
 
-      # Use your PAT so commits/PRs are authored by you
       - name: Configure git with PAT
         env:
           PAT: ${{ secrets.GH_ME_TOKEN }}
         run: |
+          set -e
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${PAT}@github.com/${{ github.repository }}.git
+
+      # ✅ Prepare branch BEFORE generating files
+      - name: Prepare auto/docs branch
+        run: |
+          set -e
+          git fetch origin
+          if git ls-remote --exit-code --heads origin auto/docs >/dev/null 2>&1; then
+            git checkout -B auto/docs origin/auto/docs
+          else
+            # base new branch on latest main
+            git checkout -B auto/docs
+          fi
 
       - uses: actions/setup-python@v5
         with:
@@ -50,27 +62,17 @@ jobs:
           PAT: ${{ secrets.GH_ME_TOKEN }}
         run: |
           set -e
-          # fetch and base our local branch on the remote if it exists
-          git fetch origin
-          if git ls-remote --exit-code --heads origin auto/docs >/dev/null 2>&1; then
-            git checkout -B auto/docs origin/auto/docs
-          else
-            git checkout -B auto/docs
-          fi
-
           git add reports/stats.md
           if git diff --cached --quiet; then
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "No changes"
             exit 0
           fi
-
           git commit -m "docs: refresh stats"
-          # push safely even if histories diverge
+          # handle remote updates safely
           git push --force-with-lease origin HEAD:refs/heads/auto/docs
           echo "changed=true" >> $GITHUB_OUTPUT
 
-      # Ensure the 'docs' label exists
       - name: Ensure 'docs' label
         if: steps.push.outputs.changed == 'true'
         env:
@@ -81,7 +83,6 @@ jobs:
               -f name='docs' -f color='0e8a16' -f description='Documentation updates'
           fi
 
-      # Open or update the PR (authored by you via PAT)
       - name: Create or update PR
         if: steps.push.outputs.changed == 'true'
         env:
