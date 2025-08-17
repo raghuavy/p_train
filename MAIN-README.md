@@ -1,2 +1,4 @@
 # This Repository is just for contribution and issue farming
-(so that recruiters think u dont touch grass enough)
+JK its a template with workflows that i use on my projects.
+Feel free to cop it.
+                -Avi
