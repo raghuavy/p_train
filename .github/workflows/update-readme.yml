@@ -1,7 +1,8 @@
 name: Update README
+
 on:
   schedule:
-    - cron: "15 5 * * *"
+    - cron: "0 * * * *"  # every hour (UTC)
   workflow_dispatch:
 
 permissions:
@@ -12,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,18 +22,26 @@ jobs:
         with:
           python-version: "3.x"
 
+      # Set the commit author to YOU so the commits count on your graph.
+      # Add a repo secret called NOREPLY_EMAIL with your GitHub noreply email:
+      # 12345678+youruser@users.noreply.github.com
+      - name: Configure author
+        run: |
+          git config user.name "Avi Raghuvanshi"
+          git config user.email "${{ secrets.NOREPLY_EMAIL }}"
+
       - name: Generate README content
         run: python scripts/update_readme.py
 
       - name: Commit & push if changed
         run: |
           set -e
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
           git add README.md
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "chore: refresh README"
+          git commit -m "chore(bot): refresh README [skip ci]"
+          # Optional: pull --rebase to avoid non-fast-forward if repo is active
+          git pull --rebase --autostash origin "${{ github.ref_name }}" || true
           git push
